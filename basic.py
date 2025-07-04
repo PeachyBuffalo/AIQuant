@@ -164,7 +164,43 @@ print("Analyzing Trends for Stocks, Cryptocurrencies, and Options\n")
 
 # Define assets to analyze
 assets = {
-    'stocks': ['TSLA', 'AAPL', 'GOOGL', 'MSFT', 'NVDA', 'META', 'AMZN', 'NFLX']
+    'stocks': [
+        # Tech Giants
+        'TSLA', 'AAPL', 'GOOGL', 'MSFT', 'NVDA', 'META', 'AMZN', 'NFLX',
+        # Financial & Banking
+        'JPM', 'BAC', 'WFC', 'GS', 'MS',
+        # Healthcare & Pharma
+        'JNJ', 'PFE', 'UNH', 'ABBV', 'TMO',
+        # Consumer & Retail
+        'WMT', 'HD', 'DIS', 'NKE', 'SBUX',
+        # Energy & Industrial
+        'XOM', 'CVX', 'BA', 'CAT', 'GE',
+        # Emerging Tech
+        'PLTR', 'SNOW', 'CRWD', 'ZM', 'SHOP'
+    ],
+    'bitcoin_treasury': [
+        # Top Bitcoin Treasury Companies (by holdings)
+        'MSTR',    # Microstrategy - 597,325 BTC
+        'MARA',    # Marathon Digital - 50,000 BTC
+        'RIOT',    # Riot Platforms - 19,225 BTC
+        'TSLA',    # Tesla - 11,509 BTC (already in stocks)
+        'HUT',     # Hut 8 Mining - 10,273 BTC
+        'COIN',    # Coinbase - 9,267 BTC
+        'CLSK',    # CleanSpark - 12,502 BTC
+        'GLXY',    # Galaxy Digital - 12,830 BTC
+        'BITF',    # Bitfarms - 1,166 BTC
+        'CIFR',    # Cipher Mining - 1,063 BTC
+        'CORZ',    # Core Scientific - 977 BTC
+        'BTBT',    # Bit Digital - 418 BTC
+        'GME',     # GameStop - 4,710 BTC
+        'SMLR',    # Semler Scientific - 4,449 BTC
+        'EXOD'     # Exodus Movement - 2,038 BTC
+    ],
+    'crypto': [
+        'BTC-USD', 'ETH-USD', 'BNB-USD', 'ADA-USD', 'SOL-USD',
+        'DOT-USD', 'DOGE-USD', 'AVAX-USD', 'MATIC-USD', 'LINK-USD',
+        'UNI-USD', 'LTC-USD', 'BCH-USD', 'XLM-USD', 'ATOM-USD'
+    ]
 }
 # Load data for trend analysis
 print("1. Loading Market Data for Trend Analysis...")
@@ -221,21 +257,169 @@ if not real_data_loaded:
             
             print(f"   ✓ {symbol}: {len(data_dict[symbol])} synthetic records")
 
-# Focus on TSLA for detailed analysis
-if 'TSLA' in data_dict:
-    data = data_dict['TSLA'].copy()
-    print(f"\n2. Detailed Trend Analysis for TSLA...")
+# ============================================================================
+# MARKET OVERVIEW SUMMARY
+# ============================================================================
+
+print("\n2. Market Overview Summary...")
+print("   Analyzing trends across all assets...")
+
+# Summary statistics for all assets
+summary_data = []
+for symbol, data in data_dict.items():
+    if len(data) > 0:
+        # Calculate basic metrics
+        current_price = data['Close'].iloc[-1]
+        price_change = ((current_price - data['Close'].iloc[0]) / data['Close'].iloc[0]) * 100
+        volatility = data['Close'].pct_change().std() * 100
+        
+        # Ensure scalar values
+        current_price = float(current_price)
+        price_change = float(price_change)
+        volatility = float(volatility)
+        
+        # Calculate RSI (simplified)
+        try:
+            if len(data) > 14:
+                rsi_series = calculate_rsi(data['Close'])
+                rsi = float(rsi_series.iloc[-1])
+            else:
+                rsi = np.nan
+        except:
+            rsi = np.nan
+        
+        # Determine trend
+        if price_change > 5:
+            trend = "Strong Bull"
+        elif price_change > 0:
+            trend = "Bull"
+        elif price_change > -5:
+            trend = "Bear"
+        else:
+            trend = "Strong Bear"
+        
+        summary_data.append({
+            'Symbol': symbol,
+            'Current_Price': current_price,
+            'Price_Change_%': price_change,
+            'Volatility_%': volatility,
+            'RSI': rsi,
+            'Trend': trend,
+            'Records': len(data)
+        })
+
+# Create summary DataFrame
+summary_df = pd.DataFrame(summary_data)
+summary_df = summary_df.sort_values('Price_Change_%', ascending=False)
+
+print(f"\n   📊 Market Summary ({len(summary_df)} assets analyzed):")
+print(f"   • Average Price Change: {summary_df['Price_Change_%'].mean():.2f}%")
+print(f"   • Average Volatility: {summary_df['Volatility_%'].mean():.2f}%")
+print(f"   • Bullish Assets: {len(summary_df[summary_df['Price_Change_%'] > 0])}")
+print(f"   • Bearish Assets: {len(summary_df[summary_df['Price_Change_%'] < 0])}")
+
+# Top performers
+print(f"\n   🏆 Top 5 Performers:")
+for _, row in summary_df.head(5).iterrows():
+    print(f"   • {row['Symbol']}: {row['Price_Change_%']:.2f}% (${row['Current_Price']:.2f})")
+
+# Bottom performers
+print(f"\n   📉 Bottom 5 Performers:")
+for _, row in summary_df.tail(5).iterrows():
+    print(f"   • {row['Symbol']}: {row['Price_Change_%']:.2f}% (${row['Current_Price']:.2f})")
+
+# Sector analysis for stocks
+stock_summary = summary_df[summary_df['Symbol'].isin(assets['stocks'])]
+crypto_summary = summary_df[summary_df['Symbol'].isin(assets['crypto'])]
+bitcoin_treasury_summary = summary_df[summary_df['Symbol'].isin(assets['bitcoin_treasury'])]
+
+if len(stock_summary) > 0:
+    print(f"\n   📈 Stock Market Summary:")
+    print(f"   • Average Stock Return: {stock_summary['Price_Change_%'].mean():.2f}%")
+    print(f"   • Stock Volatility: {stock_summary['Volatility_%'].mean():.2f}%")
+
+if len(crypto_summary) > 0:
+    print(f"\n   🪙 Crypto Market Summary:")
+    print(f"   • Average Crypto Return: {crypto_summary['Price_Change_%'].mean():.2f}%")
+    print(f"   • Crypto Volatility: {crypto_summary['Volatility_%'].mean():.2f}%")
+
+if len(bitcoin_treasury_summary) > 0:
+    print(f"\n   🏦 Bitcoin Treasury Companies Summary:")
+    print(f"   • Average Treasury Return: {bitcoin_treasury_summary['Price_Change_%'].mean():.2f}%")
+    print(f"   • Treasury Volatility: {bitcoin_treasury_summary['Volatility_%'].mean():.2f}%")
     
-    # Flatten MultiIndex columns if they exist
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = [col[0] for col in data.columns]
+    # Show top Bitcoin treasury performers
+    print(f"\n   🏆 Top Bitcoin Treasury Performers:")
+    for _, row in bitcoin_treasury_summary.head(5).iterrows():
+        print(f"   • {row['Symbol']}: {row['Price_Change_%']:.2f}% (${row['Current_Price']:.2f})")
+    
+    # Calculate correlation with Bitcoin if available
+    if 'BTC-USD' in data_dict and len(bitcoin_treasury_summary) > 0:
+        btc_data = data_dict['BTC-USD']['Close']
+        correlations = []
+        
+        print(f"\n   🔗 Bitcoin Correlation Analysis:")
+        print(f"   • BTC-USD Price: ${float(btc_data.iloc[-1]):.2f}")
+        print(f"   • BTC-USD Return: {((float(btc_data.iloc[-1]) - float(btc_data.iloc[0])) / float(btc_data.iloc[0]) * 100):.2f}%")
+        
+        for symbol in bitcoin_treasury_summary['Symbol']:
+            if symbol in data_dict and symbol != 'BTC-USD':
+                try:
+                    stock_data = data_dict[symbol]['Close']
+                    # Align data lengths and ensure same index
+                    min_len = min(len(btc_data), len(stock_data))
+                    if min_len > 10:
+                        # Use the last min_len days from both datasets
+                        btc_subset = btc_data.iloc[-min_len:].reset_index(drop=True)
+                        stock_subset = stock_data.iloc[-min_len:].reset_index(drop=True)
+                        correlation = btc_subset.corr(stock_subset)
+                        if not pd.isna(correlation):
+                            correlations.append(correlation)
+                            print(f"   • {symbol}: {correlation:.3f} correlation with BTC")
+                except Exception as e:
+                    print(f"   • {symbol}: Error calculating correlation")
+                    continue
+        
+        if correlations:
+            avg_correlation = np.mean([c for c in correlations if not pd.isna(c)])
+            print(f"\n   📊 Average BTC Correlation: {avg_correlation:.3f}")
+            
+            # Top correlated companies
+            print(f"\n   🔗 Top Bitcoin-Correlated Companies:")
+            btc_correlations = []
+            for symbol in bitcoin_treasury_summary['Symbol']:
+                if symbol in data_dict and symbol != 'BTC-USD':
+                    try:
+                        stock_data = data_dict[symbol]['Close']
+                        min_len = min(len(btc_data), len(stock_data))
+                        if min_len > 10:
+                            correlation = btc_data.iloc[-min_len:].corr(stock_data.iloc[-min_len:])
+                            if not pd.isna(correlation):
+                                btc_correlations.append((symbol, correlation))
+                    except:
+                        continue
+            
+            # Sort by correlation and show top 5
+            btc_correlations.sort(key=lambda x: x[1], reverse=True)
+            for symbol, corr in btc_correlations[:5]:
+                print(f"   • {symbol}: {corr:.3f} correlation with BTC")
+
+# Focus on best performing asset for detailed analysis
+if len(summary_df) > 0:
+    best_performer = summary_df.iloc[0]['Symbol']
+    data = data_dict[best_performer].copy()
+    print(f"\n3. Detailed Trend Analysis for {best_performer} (Best Performer)...")
     
     # ============================================================================
     # ADVANCED FEATURE ENGINEERING FOR TREND DETECTION
     # ============================================================================
     
+    # Flatten MultiIndex columns if they exist
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = [col[0] for col in data.columns]
+    
     # Basic price features
-    data['Return'] = data['Close'].pct_change()
+data['Return'] = data['Close'].pct_change()
     data['Log_Return'] = np.log(data['Close'] / data['Close'].shift(1))
     data['Volume_Change'] = data['Volume'].pct_change()
     data['Price_Range'] = (data['High'] - data['Low']) / data['Close']
@@ -301,7 +485,7 @@ if 'TSLA' in data_dict:
     # TREND ANALYSIS AND VISUALIZATION
     # ============================================================================
     
-    print("\n3. Trend Analysis Results...")
+    print("\n4. Trend Analysis Results...")
     
     # Current trend status
     latest = data.iloc[-1]
@@ -337,7 +521,7 @@ if 'TSLA' in data_dict:
     # MACHINE LEARNING FOR TREND PREDICTION
     # ============================================================================
     
-    print("\n4. Machine Learning Trend Prediction...")
+    print("\n5. Machine Learning Trend Prediction...")
     
     # Prepare features for ML
     feature_columns = [col for col in data.columns if col not in ['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close', 'Trend_Direction', 'Return']]
@@ -362,10 +546,10 @@ if 'TSLA' in data_dict:
         
         # Train model
         model = RandomForestRegressor(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-        
-        # Predict
-        predictions = model.predict(X_test)
+model.fit(X_train, y_train)
+
+# Predict
+predictions = model.predict(X_test)
         
         # Evaluate
         mse = mean_squared_error(y_test, predictions)
@@ -389,7 +573,7 @@ if 'TSLA' in data_dict:
         # TRADING RECOMMENDATIONS
         # ============================================================================
         
-        print("\n5. Trading Recommendations...")
+        print("\n6. Trading Recommendations...")
         
         # Predict next day's return
         latest_features = data_clean.iloc[-1:]
@@ -421,4 +605,4 @@ if 'TSLA' in data_dict:
         print("Note: ML prediction skipped due to insufficient data")
 
 else:
-    print("Error: TSLA data not available for analysis")
+    print("Error: No assets available for analysis")
