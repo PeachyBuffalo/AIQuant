@@ -2,10 +2,10 @@ from polygon import RESTClient
 from datetime import datetime
 import os
 
-API_KEY = "API_KEY"
-client = RESTClient(API_KEY)
+API_KEY = "API_KEY" # Replace with your Polygon API key
+client = RESTClient(API_KEY) # Initialize the client
 
-def get_previous_close(symbol: str):
+def get_previous_close(symbol: str): # Get the previous close price for a given symbol for free tier. Limited to 5 pulls per minute.
     try:
         close = client.get_previous_close(symbol)
         print(f"[{symbol}] Previous close: ${close.results[0].c}")
