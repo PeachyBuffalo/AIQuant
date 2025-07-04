@@ -6,6 +6,11 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import warnings
+import sys
+
+print(f"Python executable: {sys.executable}")
+print(f"yfinance version: {yf.__version__}")
+
 warnings.filterwarnings('ignore')
 
 # Helper function for RSI calculation
@@ -37,22 +42,49 @@ def calculate_bollinger_bands(prices, window=20, num_std=2):
 
 def detect_trend(data, window=20):
     """Detect trend direction and strength"""
+    
+    # Adjust window if dataset is too small
+    if len(data) < window:
+        window = max(1, len(data) // 2)
+    
     # Price trend
-    price_trend = (data['Close'] - data['Close'].shift(window)) / data['Close'].shift(window)
+    if len(data) > window:
+        price_trend = (data['Close'] - data['Close'].shift(window)) / data['Close'].shift(window)
+    else:
+        price_trend = pd.Series([np.nan] * len(data), index=data.index)
     
     # Moving average trend
-    sma_short = data['Close'].rolling(window=10).mean()
-    sma_long = data['Close'].rolling(window=window).mean()
-    ma_trend = (sma_short - sma_long) / sma_long
+    if len(data) >= 10:
+        sma_short = data['Close'].rolling(window=min(10, len(data))).mean()
+        sma_long = data['Close'].rolling(window=window).mean()
+        ma_trend = (sma_short - sma_long) / sma_long
+    else:
+        ma_trend = pd.Series([np.nan] * len(data), index=data.index)
     
     # Volume trend
-    volume_trend = (data['Volume'] - data['Volume'].rolling(window=window).mean()) / data['Volume'].rolling(window=window).mean()
+    if len(data) > window:
+        volume_trend = (data['Volume'] - data['Volume'].rolling(window=window).mean()) / data['Volume'].rolling(window=window).mean()
+    else:
+        volume_trend = pd.Series([np.nan] * len(data), index=data.index)
     
     # Trend classification
-    trend_direction = np.where(price_trend > 0.02, 'Uptrend', 
-                              np.where(price_trend < -0.02, 'Downtrend', 'Sideways'))
+    if len(data) > window:
+        trend_direction = np.where(price_trend > 0.02, 'Uptrend', 
+                                  np.where(price_trend < -0.02, 'Downtrend', 'Sideways'))
+        trend_strength = abs(price_trend) * 100
+    else:
+        trend_direction = pd.Series(['Sideways'] * len(data), index=data.index)
+        trend_strength = pd.Series([0.0] * len(data), index=data.index)
     
-    trend_strength = abs(price_trend) * 100
+    # Ensure all Series have the same index
+    price_trend = pd.Series(price_trend.values.flatten(), index=data.index)
+    ma_trend = pd.Series(ma_trend.values.flatten(), index=data.index)
+    volume_trend = pd.Series(volume_trend.values.flatten(), index=data.index)
+    if isinstance(trend_direction, np.ndarray):
+        trend_direction = pd.Series(trend_direction.flatten(), index=data.index)
+    else:
+        trend_direction = pd.Series(trend_direction, index=data.index)
+    trend_strength = pd.Series(trend_strength.values.flatten(), index=data.index)
     
     return pd.DataFrame({
         'Price_Trend': price_trend,
@@ -64,6 +96,19 @@ def detect_trend(data, window=20):
 
 def analyze_support_resistance(data, window=20):
     """Identify support and resistance levels"""
+    # Check if required columns exist
+    required_columns = ['High', 'Low']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    
+    if missing_columns:
+        # Return empty DataFrame with same index
+        return pd.DataFrame({
+            'Resistance': [False] * len(data),
+            'Support': [False] * len(data),
+            'Resistance_Level': [np.nan] * len(data),
+            'Support_Level': [np.nan] * len(data)
+        }, index=data.index)
+    
     highs = data['High'].rolling(window=window, center=True).max()
     lows = data['Low'].rolling(window=window, center=True).min()
     
@@ -95,17 +140,19 @@ def calculate_stochastic(data, window=14):
 
 def calculate_obv(data):
     """Calculate On-Balance Volume"""
+    if len(data) < 2:
+        return pd.Series([np.nan]*len(data), index=data.index)
     obv = pd.Series(index=data.index, dtype=float)
     obv.iloc[0] = data['Volume'].iloc[0]
-    
     for i in range(1, len(data)):
-        if data['Close'].iloc[i] > data['Close'].iloc[i-1]:
-            obv.iloc[i] = obv.iloc[i-1] + data['Volume'].iloc[i]
-        elif data['Close'].iloc[i] < data['Close'].iloc[i-1]:
-            obv.iloc[i] = obv.iloc[i-1] - data['Volume'].iloc[i]
+        prev_close = data['Close'].iloc[i-1].item()
+        curr_close = data['Close'].iloc[i].item()
+        if curr_close > prev_close:
+            obv.iloc[i] = obv.iloc[i-1] + data['Volume'].iloc[i].item()
+        elif curr_close < prev_close:
+            obv.iloc[i] = obv.iloc[i-1] - data['Volume'].iloc[i].item()
         else:
             obv.iloc[i] = obv.iloc[i-1]
-    
     return obv
 
 # ============================================================================
@@ -117,16 +164,16 @@ print("Analyzing Trends for Stocks, Cryptocurrencies, and Options\n")
 
 # Define assets to analyze
 assets = {
-    'stocks': ['TSLA', 'AAPL', 'GOOGL', 'MSFT', 'NVDA'],
-    'crypto': ['BTC-USD', 'ETH-USD', 'ADA-USD', 'DOT-USD', 'LINK-USD'],
-    'options_underlying': ['SPY', 'QQQ', 'IWM']  # Popular options underlyings
+    'stocks': ['TSLA', 'AAPL', 'GOOGL', 'MSFT', 'NVDA', 'META', 'AMZN', 'NFLX']
 }
-
 # Load data for trend analysis
 print("1. Loading Market Data for Trend Analysis...")
 data_dict = {}
-start_date = '2020-01-01'
-end_date = '2024-12-01'
+start_date = '2023-01-01'
+end_date = '2024-01-01'
+
+# Track if we got any real data
+real_data_loaded = False
 
 for category, symbols in assets.items():
     print(f"\n   Loading {category.upper()} data...")
@@ -135,16 +182,53 @@ for category, symbols in assets.items():
             data = yf.download(symbol, start=start_date, end=end_date, progress=False)
             if len(data) > 0:
                 data_dict[symbol] = data
+                real_data_loaded = True
                 print(f"   ✓ {symbol}: {len(data)} records")
             else:
                 print(f"   ✗ {symbol}: No data available")
         except Exception as e:
             print(f"   ✗ {symbol}: Error - {str(e)}")
 
+# If no real data was loaded, create synthetic data for testing
+if not real_data_loaded:
+    print("\n   ⚠️  No real data available. Creating synthetic data for testing...")
+    dates = pd.date_range(start_date, end_date, freq='D')
+    
+    for category, symbols in assets.items():
+        for symbol in symbols:
+            # Generate realistic synthetic stock data
+            np.random.seed(hash(symbol) % 1000)
+            
+            # Start with a base price and add realistic price movements
+            base_price = np.random.uniform(50, 300)
+            prices = [base_price]
+            
+            for i in range(1, len(dates)):
+                # Add daily returns with some trend and volatility
+                daily_return = np.random.normal(0.0005, 0.02)  # Slight upward trend with 2% daily volatility
+                new_price = prices[-1] * (1 + daily_return)
+                prices.append(max(new_price, 1))
+            
+            # Generate OHLC data
+            data_dict[symbol] = pd.DataFrame({
+                'Open': prices,
+                'High': [p * np.random.uniform(1.0, 1.05) for p in prices],
+                'Low': [p * np.random.uniform(0.95, 1.0) for p in prices],
+                'Close': prices,
+                'Volume': np.random.uniform(1000000, 10000000, len(dates)),
+                'Adj Close': prices
+            }, index=dates)
+            
+            print(f"   ✓ {symbol}: {len(data_dict[symbol])} synthetic records")
+
 # Focus on TSLA for detailed analysis
 if 'TSLA' in data_dict:
     data = data_dict['TSLA'].copy()
     print(f"\n2. Detailed Trend Analysis for TSLA...")
+    
+    # Flatten MultiIndex columns if they exist
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = [col[0] for col in data.columns]
     
     # ============================================================================
     # ADVANCED FEATURE ENGINEERING FOR TREND DETECTION
@@ -188,13 +272,13 @@ if 'TSLA' in data_dict:
     data['Stochastic_D'] = data['Stochastic_K'].rolling(window=3).mean()
     
     # Volume indicators
-    data['Volume_SMA'] = data['Volume'].rolling(window=20).mean()
-    # Ensure both are Series, not DataFrames
-    if isinstance(data['Volume_SMA'], pd.DataFrame):
-        data['Volume_SMA'] = data['Volume_SMA'].iloc[:, 0]
-    if isinstance(data['Volume'], pd.DataFrame):
-        data['Volume'] = data['Volume'].iloc[:, 0]
-    data['Volume_Ratio'] = data['Volume'] / data['Volume_SMA']
+    # Ensure Volume is a Series
+    volume_series = data['Volume']
+    if isinstance(volume_series, pd.DataFrame):
+        volume_series = volume_series.iloc[:, 0]
+    
+    data['Volume_SMA'] = volume_series.rolling(window=20).mean()
+    data['Volume_Ratio'] = volume_series / data['Volume_SMA']
     data['OBV'] = calculate_obv(data)
     
     # Trend detection
@@ -256,73 +340,85 @@ if 'TSLA' in data_dict:
     print("\n4. Machine Learning Trend Prediction...")
     
     # Prepare features for ML
-    feature_columns = [col for col in data.columns if col not in ['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close']]
-    data_clean = data[feature_columns].dropna()
+    feature_columns = [col for col in data.columns if col not in ['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close', 'Trend_Direction', 'Return']]
+    data_clean = data[feature_columns].fillna(method='ffill').fillna(method='bfill').fillna(0)
     
     # Target: Next day's return
     X = data_clean.iloc[:-1]  # All but last row
-    y = data_clean['Return'].iloc[1:]  # Next day's return
+    y = data['Return'].iloc[1:]  # Next day's return from original data
     
     # Ensure same length
     min_len = min(len(X), len(y))
     X = X.iloc[:min_len]
     y = y.iloc[:min_len]
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    # Train model
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    
-    # Predict
-    predictions = model.predict(X_test)
-    
-    # Evaluate
-    mse = mean_squared_error(y_test, predictions)
-    r2 = r2_score(y_test, predictions)
-    
-    print(f"   Model Performance:")
-    print(f"   • R² Score: {r2:.4f}")
-    print(f"   • RMSE: {np.sqrt(mse):.6f}")
-    
-    # Feature importance
-    feature_importance = pd.DataFrame({
-        'Feature': X.columns,
-        'Importance': model.feature_importances_
-    }).sort_values('Importance', ascending=False)
-    
-    print(f"\n   Top 5 Most Important Features for Trend Prediction:")
-    for _, row in feature_importance.head(5).iterrows():
-        print(f"   • {row['Feature']}: {row['Importance']:.4f}")
-    
-    # ============================================================================
-    # TRADING RECOMMENDATIONS
-    # ============================================================================
-    
-    print("\n5. Trading Recommendations...")
-    
-    # Predict next day's return
-    latest_features = data_clean.iloc[-1:].drop('Return', axis=1, errors='ignore')
-    next_day_prediction = model.predict(latest_features)[0]
-    
-    print(f"   Predicted Next Day Return: {next_day_prediction:.4f} ({next_day_prediction*100:.2f}%)")
-    
-    if next_day_prediction > 0.01:  # >1% predicted gain
-        print("   🟢 BULLISH SIGNAL: Strong upward movement expected")
-    elif next_day_prediction > 0.005:  # >0.5% predicted gain
-        print("   🟡 MODERATE BULLISH: Slight upward movement expected")
-    elif next_day_prediction < -0.01:  # >1% predicted loss
-        print("   🔴 BEARISH SIGNAL: Strong downward movement expected")
-    elif next_day_prediction < -0.005:  # >0.5% predicted loss
-        print("   🟡 MODERATE BEARISH: Slight downward movement expected")
+    # Check if we have enough data
+    if len(X) == 0 or len(y) == 0:
+        print("   ⚠️  Not enough data for machine learning analysis")
+        print("   Skipping ML prediction...")
     else:
-        print("   ⚪ NEUTRAL: Minimal movement expected")
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # Train model
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+        
+        # Predict
+        predictions = model.predict(X_test)
+        
+        # Evaluate
+        mse = mean_squared_error(y_test, predictions)
+        r2 = r2_score(y_test, predictions)
+        
+        print(f"   Model Performance:")
+        print(f"   • R² Score: {r2:.4f}")
+        print(f"   • RMSE: {np.sqrt(mse):.6f}")
+        
+        # Feature importance
+        feature_importance = pd.DataFrame({
+            'Feature': X.columns,
+            'Importance': model.feature_importances_
+        }).sort_values('Importance', ascending=False)
+        
+        print(f"\n   Top 5 Most Important Features for Trend Prediction:")
+        for _, row in feature_importance.head(5).iterrows():
+            print(f"   • {row['Feature']}: {row['Importance']:.4f}")
+        
+        # ============================================================================
+        # TRADING RECOMMENDATIONS
+        # ============================================================================
+        
+        print("\n5. Trading Recommendations...")
+        
+        # Predict next day's return
+        latest_features = data_clean.iloc[-1:]
+        next_day_prediction = model.predict(latest_features)[0]
+        
+        print(f"   Predicted Next Day Return: {next_day_prediction:.4f} ({next_day_prediction*100:.2f}%)")
+        
+        if next_day_prediction > 0.01:  # >1% predicted gain
+            print("   🟢 BULLISH SIGNAL: Strong upward movement expected")
+        elif next_day_prediction > 0.005:  # >0.5% predicted gain
+            print("   🟡 MODERATE BULLISH: Slight upward movement expected")
+        elif next_day_prediction < -0.01:  # >1% predicted loss
+            print("   🔴 BEARISH SIGNAL: Strong downward movement expected")
+        elif next_day_prediction < -0.005:  # >0.5% predicted loss
+            print("   🟡 MODERATE BEARISH: Slight downward movement expected")
+        else:
+            print("   ⚪ NEUTRAL: Minimal movement expected")
+        
+        print(f"\n=== TREND ANALYSIS COMPLETE ===")
+        print(f"Analyzed {len(data)} trading days")
+        print(f"Current trend: {latest['Trend_Direction']}")
+        print(f"Prediction confidence: {abs(r2)*100:.1f}%")
     
-    print(f"\n=== TREND ANALYSIS COMPLETE ===")
-    print(f"Analyzed {len(data)} trading days")
-    print(f"Current trend: {latest['Trend_Direction']}")
-    print(f"Prediction confidence: {abs(r2)*100:.1f}%")
+    # If no ML analysis was performed, still show basic completion
+    if len(X) == 0 or len(y) == 0:
+        print(f"\n=== TREND ANALYSIS COMPLETE ===")
+        print(f"Analyzed {len(data)} trading days")
+        print(f"Current trend: {latest['Trend_Direction']}")
+        print("Note: ML prediction skipped due to insufficient data")
 
 else:
     print("Error: TSLA data not available for analysis")
