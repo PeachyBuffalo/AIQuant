@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import warnings
 import sys
+import subprocess
 
 print(f"Python executable: {sys.executable}")
 print(f"yfinance version: {yf.__version__}")
@@ -154,6 +155,16 @@ def calculate_obv(data):
         else:
             obv.iloc[i] = obv.iloc[i-1]
     return obv
+
+def send_mac_notification(title, message):
+    try:
+        subprocess.run([
+            'terminal-notifier',
+            '-title', title,
+            '-message', message
+        ])
+    except Exception as e:
+        print(f"Notification error: {e}")
 
 # ============================================================================
 # TREND DETECTION FOR STOCKS, CRYPTO, AND OPTIONS
@@ -419,7 +430,7 @@ if len(summary_df) > 0:
         data.columns = [col[0] for col in data.columns]
     
     # Basic price features
-data['Return'] = data['Close'].pct_change()
+    data['Return'] = data['Close'].pct_change()
     data['Log_Return'] = np.log(data['Close'] / data['Close'].shift(1))
     data['Volume_Change'] = data['Volume'].pct_change()
     data['Price_Range'] = (data['High'] - data['Low']) / data['Close']
@@ -546,10 +557,10 @@ data['Return'] = data['Close'].pct_change()
         
         # Train model
         model = RandomForestRegressor(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
+        model.fit(X_train, y_train)
 
-# Predict
-predictions = model.predict(X_test)
+        # Predict
+        predictions = model.predict(X_test)
         
         # Evaluate
         mse = mean_squared_error(y_test, predictions)
@@ -564,23 +575,23 @@ predictions = model.predict(X_test)
             'Feature': X.columns,
             'Importance': model.feature_importances_
         }).sort_values('Importance', ascending=False)
-        
+
         print(f"\n   Top 5 Most Important Features for Trend Prediction:")
         for _, row in feature_importance.head(5).iterrows():
             print(f"   • {row['Feature']}: {row['Importance']:.4f}")
-        
+
         # ============================================================================
         # TRADING RECOMMENDATIONS
         # ============================================================================
-        
+
         print("\n6. Trading Recommendations...")
-        
+
         # Predict next day's return
         latest_features = data_clean.iloc[-1:]
         next_day_prediction = model.predict(latest_features)[0]
-        
+
         print(f"   Predicted Next Day Return: {next_day_prediction:.4f} ({next_day_prediction*100:.2f}%)")
-        
+
         if next_day_prediction > 0.01:  # >1% predicted gain
             print("   🟢 BULLISH SIGNAL: Strong upward movement expected")
         elif next_day_prediction > 0.005:  # >0.5% predicted gain
@@ -591,18 +602,18 @@ predictions = model.predict(X_test)
             print("   🟡 MODERATE BEARISH: Slight downward movement expected")
         else:
             print("   ⚪ NEUTRAL: Minimal movement expected")
-        
+
         print(f"\n=== TREND ANALYSIS COMPLETE ===")
         print(f"Analyzed {len(data)} trading days")
         print(f"Current trend: {latest['Trend_Direction']}")
         print(f"Prediction confidence: {abs(r2)*100:.1f}%")
-    
-    # If no ML analysis was performed, still show basic completion
-    if len(X) == 0 or len(y) == 0:
-        print(f"\n=== TREND ANALYSIS COMPLETE ===")
-        print(f"Analyzed {len(data)} trading days")
-        print(f"Current trend: {latest['Trend_Direction']}")
-        print("Note: ML prediction skipped due to insufficient data")
+        
+        # If no ML analysis was performed, still show basic completion
+        if len(X) == 0 or len(y) == 0:
+            print(f"\n=== TREND ANALYSIS COMPLETE ===")
+            print(f"Analyzed {len(data)} trading days")
+            print(f"Current trend: {latest['Trend_Direction']}")
+            print("Note: ML prediction skipped due to insufficient data")
 
-else:
-    print("Error: No assets available for analysis")
+        else:
+            print("Error: No assets available for analysis")
